@@ -43,18 +43,40 @@ BrowserWebKitInit::BrowserWebKitInit()
   WebKit::initialize(this);
   WebKit::setLayoutTestMode(false);
 
+  // Set by CEF
   WebKit::WebRuntimeFeatures::enableSockets(true);
   WebKit::WebRuntimeFeatures::enableApplicationCache(true);
   WebKit::WebRuntimeFeatures::enableDatabase(true);
   WebKit::WebRuntimeFeatures::enablePushState(true);
   WebKit::WebRuntimeFeatures::enableIndexedDatabase(true);
   WebKit::WebRuntimeFeatures::enableFileSystem(true);
+
+  // Known by AppJS to work
+  WebKit::WebRuntimeFeatures::enableFullScreenAPI(true);
+  WebKit::WebRuntimeFeatures::enableGamepad(true);
   WebKit::WebRuntimeFeatures::enablePointerLock(true);
   WebKit::WebRuntimeFeatures::enableShadowDOM(true);
   WebKit::WebRuntimeFeatures::enableStyleScoped(true);
-  WebKit::WebRuntimeFeatures::enableMediaStream(true);
-  WebKit::WebRuntimeFeatures::enableMediaSource(true);
+  WebKit::WebRuntimeFeatures::enableXHRResponseBlob(true);
+
+  // experimental
   WebKit::WebRuntimeFeatures::enableCSSExclusions(true);
+  WebKit::WebRuntimeFeatures::enableDataTransferItems(true);
+  WebKit::WebRuntimeFeatures::enableDialogElement(true);
+  WebKit::WebRuntimeFeatures::enableMediaStream(true);
+  WebKit::WebRuntimeFeatures::enablePeerConnection(true);
+  WebKit::WebRuntimeFeatures::enableVideoTrack(true);
+  WebKit::WebRuntimeFeatures::enableWebAudio(true);
+
+
+  //WebKit::WebRuntimeFeatures::enableEncryptedMedia(false);
+  //WebKit::WebRuntimeFeatures::enableInputTypeMonth(false);
+  //WebKit::WebRuntimeFeatures::enableInputTypeWeek(false);
+  //WebKit::WebRuntimeFeatures::enableInputTypeTime(false);
+  //WebKit::WebRuntimeFeatures::enableInputTypeDate(false);
+  //WebKit::WebRuntimeFeatures::enableInputTypeDateTime(false);
+  //WebKit::WebRuntimeFeatures::enableInputTypeDateTimeLocal(false);
+
 
 
   // TODO(cef): Enable these once the implementation supports it.
@@ -64,7 +86,6 @@ BrowserWebKitInit::BrowserWebKitInit()
   WebKit::WebRuntimeFeatures::enableTouch(false);
   WebKit::WebRuntimeFeatures::enableDeviceMotion(false);
   WebKit::WebRuntimeFeatures::enableDeviceOrientation(false);
-
 
   prerendering_support_.reset(new BrowserPrerenderingSupport);
   WebKit::WebPrerenderingSupport::initialize(prerendering_support_.get());
