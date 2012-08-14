@@ -42,12 +42,20 @@ BrowserWebKitInit::BrowserWebKitInit()
 
   WebKit::initialize(this);
   WebKit::setLayoutTestMode(false);
+
   WebKit::WebRuntimeFeatures::enableSockets(true);
   WebKit::WebRuntimeFeatures::enableApplicationCache(true);
   WebKit::WebRuntimeFeatures::enableDatabase(true);
   WebKit::WebRuntimeFeatures::enablePushState(true);
   WebKit::WebRuntimeFeatures::enableIndexedDatabase(true);
   WebKit::WebRuntimeFeatures::enableFileSystem(true);
+  WebKit::WebRuntimeFeatures::enablePointerLock(true);
+  WebKit::WebRuntimeFeatures::enableShadowDOM(true);
+  WebKit::WebRuntimeFeatures::enableStyleScoped(true);
+  WebKit::WebRuntimeFeatures::enableMediaStream(true);
+  WebKit::WebRuntimeFeatures::enableMediaSource(true);
+  WebKit::WebRuntimeFeatures::enableCSSExclusions(true);
+
 
   // TODO(cef): Enable these once the implementation supports it.
   WebKit::WebRuntimeFeatures::enableNotifications(false);
@@ -56,6 +64,7 @@ BrowserWebKitInit::BrowserWebKitInit()
   WebKit::WebRuntimeFeatures::enableTouch(false);
   WebKit::WebRuntimeFeatures::enableDeviceMotion(false);
   WebKit::WebRuntimeFeatures::enableDeviceOrientation(false);
+
 
   prerendering_support_.reset(new BrowserPrerenderingSupport);
   WebKit::WebPrerenderingSupport::initialize(prerendering_support_.get());
