@@ -93,7 +93,10 @@ bool CefBrowserImpl::UIT_CreateBrowser(const CefString& url) {
     dev_tools_agent_->SetWebView(webviewhost_->webview());
 
   window_info_.m_Widget = webviewhost_->view_handle();
-  g_signal_connect(G_OBJECT(window_info_.m_Widget), "destroy",
+  // By AppJS
+  g_signal_connect(
+                   G_OBJECT(gtk_widget_get_ancestor(GTK_WIDGET(window_info_.m_Widget), GTK_TYPE_WINDOW))
+                   ,"destroy",
                    G_CALLBACK(window_destroyed), this);
 
   if (!settings_.drag_drop_disabled)
