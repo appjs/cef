@@ -21,6 +21,7 @@ using WebKit::WebSize;
 
 void CefBrowserImpl::ParentWindowWillClose() {
   // TODO(port): Implement this method if necessary.
+  UIT_DestroyBrowser();
 }
 
 CefWindowHandle CefBrowserImpl::GetWindowHandle() {
