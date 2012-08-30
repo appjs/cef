@@ -529,13 +529,13 @@ WebCookieJar* BrowserWebViewDelegate::GetCookieJar() {
 
 void BrowserWebViewDelegate::didInvalidateRect(const WebRect& rect) {
   if (WebWidgetHost* host = GetWidgetHost())
-    host->DidInvalidateRect(rect);
+    host->InvalidateRect(rect);
 }
 
 void BrowserWebViewDelegate::didScrollRect(int dx, int dy,
                                         const WebRect& clip_rect) {
   if (WebWidgetHost* host = GetWidgetHost())
-    host->DidScrollRect(dx, dy, clip_rect);
+    host->ScrollRect(dx, dy, clip_rect);
 }
 
 void BrowserWebViewDelegate::scheduleComposite() {
@@ -688,7 +688,7 @@ WebPlugin* BrowserWebViewDelegate::createPlugin(
 }
 
 WebMediaPlayer* BrowserWebViewDelegate::createMediaPlayer(
-    WebFrame* frame, WebMediaPlayerClient* client) {
+    WebFrame* frame, const WebKit::WebURL&, WebMediaPlayerClient* client) {
   scoped_ptr<media::MessageLoopFactory> message_loop_factory(
      new media::MessageLoopFactory());
 

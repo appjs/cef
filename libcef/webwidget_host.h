@@ -76,8 +76,9 @@ class WebWidgetHost {
   gfx::NativeView view_handle() const { return view_; }
   WebKit::WebWidget* webwidget() const { return webwidget_; }
 
-  void DidInvalidateRect(const gfx::Rect& rect);
-  void DidScrollRect(int dx, int dy, const gfx::Rect& clip_rect);
+  void InvalidateRect(const gfx::Rect& rect);
+
+  void ScrollRect(int dx, int dy, const gfx::Rect& clip_rect);
 
   // Called for accelerated content like WebGL.
   void ScheduleComposite();
@@ -85,28 +86,15 @@ class WebWidgetHost {
   // Called for requestAnimationFrame animations.
   void ScheduleAnimation();
 
-  // Invalidate the complete client area. This is called at a reasonable frame
-  // rate by the Schedule*() methods.
-  void Invalidate();
-
 #if defined(OS_WIN)
   void SetCursor(HCURSOR cursor);
 #endif
-
-  // Update the region that will be painted to the canvas by WebKit the next
-  // time that Paint() is called.
-  void UpdatePaintRect(const gfx::Rect& rect);
-
-  // Update the region that will be drawn to the device the next time Paint()
-  // is called. This is only used when window rendering is disabled.
-  void UpdateRedrawRect(const gfx::Rect& rect);
 
 #if defined(OS_MACOSX)
   void Paint(SkRegion& update_rgn);
 #else
   void Paint();
 #endif
-  void InvalidateRect(const gfx::Rect& rect);
 
   bool GetImage(int width, int height, void* buffer);
 
@@ -118,8 +106,6 @@ class WebWidgetHost {
   WebKit::WebScreenInfo GetScreenInfo();
 
   WebKit::WebKeyboardEvent GetLastKeyEvent() const { return last_key_event_; }
-
-  void PaintRect(const gfx::Rect& rect);
 
   void SetTooltipText(const CefString& tooltip_text);
 
@@ -139,6 +125,10 @@ class WebWidgetHost {
   void MoveWindowedPlugin(const webkit::npapi::WebPluginGeometry& geometry);
   gfx::PluginWindowHandle GetWindowedPluginAt(int x, int y);
 
+  void SetFrameRate(int frames_per_second);
+
+  virtual bool IsTransparent() { return false; }
+
   void set_popup(bool popup) { popup_ = popup; }
   bool popup() { return popup_; }
 
@@ -147,16 +137,26 @@ class WebWidgetHost {
  protected:
   WebWidgetHost();
 
-  // If window rendering is disabled paint messages are generated after all
-  // other pending messages have been processed.
-  void SchedulePaintTimer();
-  void DoPaint();
+  // Update the region that will be painted to the canvas by WebKit the next
+  // time that Paint() is called.
+  void UpdatePaintRect(const gfx::Rect& rect);
+
+  void PaintRect(const gfx::Rect& rect);
+
+  // Trigger the OS to invalidate/repaint the window.
+  void InvalidateWindow();
+  void InvalidateWindowRect(const gfx::Rect& rect);
+
+  // When window rendering is enabled this method invalidates the client area to
+  // trigger repaint via the OS. When window rendering is disabled this method
+  // is used to generate CefRenderHandler::OnPaint() calls.
+  void ScheduleTimer();
+  void DoTimer();
 
 #if defined(OS_WIN)
   // Per-class wndproc.  Returns true if the event should be swallowed.
   virtual bool WndProc(UINT message, WPARAM wparam, LPARAM lparam);
 
-  void Resize(LPARAM lparam);
   virtual void MouseEvent(UINT message, WPARAM wparam, LPARAM lparam);
   void WheelEvent(WPARAM wparam, LPARAM lparam);
   virtual void KeyEvent(UINT message, WPARAM wparam, LPARAM lparam);
@@ -179,7 +179,6 @@ class WebWidgetHost {
 #elif defined(OS_MACOSX)
   // These need to be called from a non-subclass, so they need to be public.
  public:
-  void Resize(const gfx::Rect& rect);
   virtual void MouseEvent(NSEvent* event);
   void WheelEvent(NSEvent* event);
   virtual void KeyEvent(NSEvent* event);
@@ -200,7 +199,6 @@ class WebWidgetHost {
   // ---------------------------------------------------------------------------
   static gfx::NativeView CreateWidget(gfx::NativeView parent_view,
                                       WebWidgetHost* host);
-  void Resize(const gfx::Size& size);
   virtual void KeyEvent(GdkEventKey* event);
 #endif
 
@@ -237,20 +235,17 @@ class WebWidgetHost {
   gfx::Rect paint_rect_;
 #endif
 
-  // Used to coalesce DidInvalidateRect() events into a single DoPaint() call.
-  // Used when window rendering is disabled.
-  base::OneShotTimer<WebWidgetHost> paint_timer_;
+  base::OneShotTimer<WebWidgetHost> timer_;
+  base::TimeTicks timer_last_;
+  bool timer_executing_;
+  bool timer_wanted_;
 
-  // Used to coalesce Schedule*() events into a single Invalidate() call.
-  base::OneShotTimer<WebWidgetHost> invalidate_timer_;
+  int64 frame_delay_;
 
 #if defined(OS_WIN)
   // Used to call UpdateImeInputState() while IME is active.
   base::RepeatingTimer<WebWidgetHost> ime_timer_;
 #endif
-
-  // Redraw rectangle requested by an explicit call to CefBrowser::Invalidate().
-  gfx::Rect redraw_rect_;
 
   // The map of windowed plugins that need to be drawn when window rendering is
   // disabled.
@@ -283,16 +278,13 @@ class WebWidgetHost {
   WebKit::WebMouseEvent::Button mouse_button_down_;
 #endif
 
-#if defined(TOOLKIT_GTK)
-  // Since GtkWindow resize is asynchronous, we have to stash the dimensions,
-  // so that the backing store doesn't have to wait for sizing to take place.
-  gfx::Size logical_size_;
-#endif
-
   WebKit::WebKeyboardEvent last_key_event_;
 
   bool painting_;
   bool layouting_;
+
+  static const int kDefaultFrameRate;
+  static const int kMaxFrameRate;
 };
 
 #endif  // CEF_LIBCEF_WEBWIDGET_HOST_H_

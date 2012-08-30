@@ -59,9 +59,30 @@ class ClientOSRHandler : public CefClient,
                          public CefRenderHandler {
  public:
   explicit ClientOSRHandler(ClientPlugin* plugin)
-    : plugin_(plugin) {
+    : plugin_(plugin),
+      want_pixel_value_(false) {
   }
   ~ClientOSRHandler() {
+  }
+
+  // Called immediately before the plugin is destroyed.
+  void Detach() {
+    plugin_ = NULL;
+  }
+
+  // Retrieve the pixel value at the requested coordinate the next time that
+  // the view is painted.
+  void WantPixelValue(int x, int y) {
+    if (!want_pixel_value_) {
+      want_pixel_value_ = true;
+
+      // Trigger a call to OnPaint.
+      if (g_offscreenBrowser.get())
+        g_offscreenBrowser->Invalidate(CefRect(0,0,1,1));
+    }
+
+    coord_x_ = x;
+    coord_y_ = y;
   }
 
   // CefClient methods
@@ -202,6 +223,9 @@ class ClientOSRHandler : public CefClient,
                            CefRect& rect) OVERRIDE {
     REQUIRE_UI_THREAD();
 
+    if (!plugin_)
+      return false;
+
     // The simulated screen and view rectangle are the same. This is necessary
     // for popup menus to be located and sized inside the view.
     RECT clientRect;
@@ -225,6 +249,9 @@ class ClientOSRHandler : public CefClient,
                               int& screenY) OVERRIDE {
     REQUIRE_UI_THREAD();
 
+    if (!plugin_)
+      return false;
+
     // Convert the point from view coordinates to actual screen coordinates.
     POINT screen_pt = {viewX, viewY};
     MapWindowPoints(plugin_->hWnd, HWND_DESKTOP, &screen_pt, 1);
@@ -236,12 +263,20 @@ class ClientOSRHandler : public CefClient,
   virtual void OnPopupShow(CefRefPtr<CefBrowser> browser,
                            bool show) OVERRIDE {
     REQUIRE_UI_THREAD();
+
+    if (!plugin_)
+      return;
+
     plugin_->renderer.OnPopupShow(browser, show);
   }
 
   virtual void OnPopupSize(CefRefPtr<CefBrowser> browser,
                            const CefRect& rect) OVERRIDE {
     REQUIRE_UI_THREAD();
+
+    if (!plugin_)
+      return;
+
     plugin_->renderer.OnPopupSize(browser, rect);
   }
 
@@ -251,13 +286,55 @@ class ClientOSRHandler : public CefClient,
                        const void* buffer) OVERRIDE {
     REQUIRE_UI_THREAD();
 
+    if (!plugin_)
+      return;
+
     wglMakeCurrent(plugin_->hDC, plugin_->hRC);
     plugin_->renderer.OnPaint(browser, type, dirtyRects, buffer);
+    plugin_->renderer.Render();
+
+    SwapBuffers(plugin_->hDC);
+
+    if (type == PET_VIEW && want_pixel_value_) {
+      // Retrieve the pixel value at the requested coordinate.
+      int width = plugin_->renderer.GetViewWidth();
+      int height = plugin_->renderer.GetViewHeight();
+
+      if(coord_x_ >= 0 && coord_x_ < width &&
+         coord_y_ >= 0 && coord_y_ < height) {
+        bool transparent = plugin_->renderer.IsTransparent();
+
+        int index = (width * coord_y_ * 4) + (coord_x_ * 4);
+        const unsigned char *pBuf = static_cast<const unsigned char*>(buffer);
+        unsigned char r, g, b, a;
+
+        b = pBuf[index];
+        g = pBuf[index+1];
+        r = pBuf[index+2];
+        if (transparent)
+          a = pBuf[index+3];
+
+        std::stringstream ss;
+        ss << coord_x_ << "," << coord_y_ << " = R:" << static_cast<int>(r)
+            << " G:" << static_cast<int>(g) << " B:" << static_cast<int>(b);
+        if (transparent)
+          ss << " A:" << static_cast<int>(a);
+
+        std::string js =
+            "document.getElementById('pixel').innerText = '" + ss.str() + "';";
+        AppGetBrowser()->GetMainFrame()->ExecuteJavaScript(js, "", 0);
+      }
+
+      want_pixel_value_ = false;
+    }
   }
 
   virtual void OnCursorChange(CefRefPtr<CefBrowser> browser,
                               CefCursorHandle cursor) OVERRIDE {
     REQUIRE_UI_THREAD();
+
+    if (!plugin_)
+      return;
 
     // Change the plugin window's cursor.
     SetClassLong(plugin_->hWnd, GCL_HCURSOR,
@@ -277,6 +354,11 @@ class ClientOSRHandler : public CefClient,
   }
 
   ClientPlugin* plugin_;
+
+  // Used for retrieving the pixel value.
+  bool want_pixel_value_;
+  int coord_x_;
+  int coord_y_;
 
   // Include the default reference counting implementation.
   IMPLEMENT_REFCOUNTING(ClientOSRPlugin);
@@ -324,21 +406,8 @@ void DisableGL(ClientPlugin* plugin) {
 
 // Size the GL view.
 void SizeGL(ClientPlugin* plugin, int width, int height) {
-  wglMakeCurrent(plugin->hDC, plugin->hRC);
-
-  plugin->renderer.SetSize(width, height);
-
   if (g_offscreenBrowser.get())
     g_offscreenBrowser->SetSize(PET_VIEW, width, height);
-}
-
-// Render the view contents.
-void RenderGL(ClientPlugin* plugin) {
-  wglMakeCurrent(plugin->hDC, plugin->hRC);
-
-  plugin->renderer.Render();
-
-  SwapBuffers(plugin->hDC);
 }
 
 NPError NPP_NewImpl(NPMIMEType plugin_type, NPP instance, uint16 mode,
@@ -357,6 +426,11 @@ NPError NPP_DestroyImpl(NPP instance, NPSavedData** save) {
   ClientPlugin* plugin = reinterpret_cast<ClientPlugin*>(instance->pdata);
 
   if (plugin) {
+    if (g_offscreenBrowser.get()) {
+      CefRefPtr<ClientOSRHandler> handler =
+          static_cast<ClientOSRHandler*>(g_offscreenBrowser->GetClient().get());
+      handler->Detach();
+    }
     if (plugin->hWnd) {
       DestroyWindow(plugin->hWnd);
       DisableGL(plugin);
@@ -407,10 +481,13 @@ NPError NPP_SetWindowImpl(NPP instance, NPWindow* window_info) {
 
     // Create the off-screen rendering window.
     CefWindowInfo windowInfo;
-    CefBrowserSettings settings;
     windowInfo.SetAsOffScreen(plugin->hWnd);
     if (g_offscreenTransparent)
       windowInfo.SetTransparentPainting(TRUE);
+
+    CefBrowserSettings settings;
+    AppGetBrowserSettings(settings);
+
     CefBrowser::CreateBrowser(windowInfo, new ClientOSRHandler(plugin),
         "http://www.google.com", settings);
   }
@@ -439,23 +516,11 @@ LRESULT CALLBACK PluginWndProc(HWND hWnd, UINT message, WPARAM wParam,
       reinterpret_cast<ClientPlugin*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
 
   switch (message) {
-  case WM_CREATE:
-    // Start the timer that's used for redrawing.
-    SetTimer(hWnd, 1, 20, NULL);
-    return 0;
-
   case WM_DESTROY:
-    // Stop the timer that's used for redrawing.
-    KillTimer(hWnd, 1);
-
     // Explicitly close the offscreen browser and release the reference.
     g_offscreenBrowser->CloseBrowser();
     g_offscreenBrowser = NULL;
     return 0;
-
-  case WM_TIMER:
-    RenderGL(plugin);
-    break;
 
   case WM_LBUTTONDOWN:
   case WM_RBUTTONDOWN:
@@ -470,18 +535,9 @@ LRESULT CALLBACK PluginWndProc(HWND hWnd, UINT message, WPARAM wParam,
       // Retrieve the pixel value.
       int x = LOWORD(lParam);
       int y = HIWORD(lParam);
-      unsigned char r, g, b, a;
-      if (plugin->renderer.GetPixelValue(x, y, r, g, b, a)) {
-        std::stringstream ss;
-        ss << x << "," << y << " = R:" << static_cast<int>(r) << " G:" <<
-            static_cast<int>(g) << " B:" << static_cast<int>(b);
-        if (plugin->renderer.IsTransparent())
-          ss << " A:" << static_cast<int>(a);
-
-        std::string js =
-            "document.getElementById('pixel').innerText = '" + ss.str() + "';";
-        AppGetBrowser()->GetMainFrame()->ExecuteJavaScript(js, "", 0);
-      }
+      CefRefPtr<ClientOSRHandler> handler =
+          static_cast<ClientOSRHandler*>(g_offscreenBrowser->GetClient().get());
+      handler->WantPixelValue(x, y);
     } else {
       if (g_offscreenBrowser.get()) {
         g_offscreenBrowser->SendMouseClickEvent(LOWORD(lParam), HIWORD(lParam),

@@ -7,8 +7,9 @@
 
 #include "cefclient/osrtest_mac.h"
 #include "include/cef_browser.h"
-#include "cefclient/osrenderer.h"
+#include "cefclient/cefclient.h"
 #include "cefclient/client_popup_handler.h"
+#include "cefclient/osrenderer.h"
 #include "cefclient/resource_util.h"
 #include "cefclient/util.h"
 
@@ -253,18 +254,13 @@ class ClientOSRHandler : public CefClient,
     if (!view_)
       return;
 
-    [[view_ openGLContext] makeCurrentContext];
+    NSOpenGLContext* context = [view_ openGLContext];
+    [context makeCurrentContext];
 
     view_->renderer_->OnPaint(browser, type, dirtyRects, buffer);
+    view_->renderer_->Render();
 
-    // Notify the view to redraw the invalidated regions.
-    {
-      RectList::const_iterator i = dirtyRects.begin();
-      for (; i != dirtyRects.end(); ++i) {
-        NSRect rect = {{i->x, i->y}, {i->width, i->height}};
-        [view_ setNeedsDisplayInRect:rect];
-      }
-    }
+    [context flushBuffer];
   }
 
   virtual void OnCursorChange(CefRefPtr<CefBrowser> browser,
@@ -328,24 +324,11 @@ class ClientOSRHandler : public CefClient,
   [super dealloc];
 }
 
-- (void)drawRect: (NSRect)bounds {
-  NSOpenGLContext* context = [self openGLContext];
-  [context makeCurrentContext];
-
-  renderer_->Render();
-
-  [context flushBuffer];
-}
-
 - (void)setFrame:(NSRect)frameRect {
   [super setFrame:frameRect];
 
   int width = frameRect.size.width;
   int height = frameRect.size.height;
-  
-  [[self openGLContext] makeCurrentContext];
-  
-  renderer_->SetSize(width, height);
 
   if (browser_)
     browser_->SetSize(PET_VIEW, width, height);
@@ -735,11 +718,13 @@ void RunTest(bool transparent) {
   [view release];
 
   CefWindowInfo info;
-  CefBrowserSettings settings;
 
   // Initialize the window info as off-screen.
   info.SetAsOffScreen(view);
   info.SetTransparentPainting(transparent);
+
+  CefBrowserSettings settings;
+  AppGetBrowserSettings(settings);
 
   // Creat the browser window.
   CefBrowser::CreateBrowser(info, new ClientOSRHandler(view),
